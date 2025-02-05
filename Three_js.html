@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="it">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Sfera VR con Three.js e WebXR</title>
+    <style>
+      body { margin: 0; overflow: hidden; }
+    </style>
+  </head>
+  <body>
+    <!-- Lo script principale sarà un modulo ES -->
+    <script type="module">
+      // Importa Three.js dal CDN (assicurati di usare una versione recente)
+      import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
+      // Importa VRButton come modulo ES
+      import { VRButton } from 'https://unpkg.com/three@0.160.0/examples/jsm/webxr/VRButton.js';
+
+      // Crea la scena, la camera e il renderer
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+      camera.position.set(0, 1.6, 3);
+
+      const renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.xr.enabled = true;
+      document.body.appendChild(renderer.domElement);
+
+      // Aggiungi il bottone VR fornito da VRButton
+      document.body.appendChild(VRButton.createButton(renderer));
+
+      // Crea una sfera (wireframe per semplicità)
+      const geometry = new THREE.SphereGeometry(1, 32, 32);
+      const material = new THREE.MeshBasicMaterial({ color: 0x00ff00, wireframe: true });
+      const sphere = new THREE.Mesh(geometry, material);
+      scene.add(sphere);
+
+      // Animazione di base: ruota la sfera
+      function animate() {
+        renderer.setAnimationLoop(render);
+      }
+
+      function render() {
+        sphere.rotation.y += 0.01;
+        renderer.render(scene, camera);
+      }
+      
+      animate();
+
+      // Gestione del resize
+      window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      });
+    </script>
+  </body>
+</html>
