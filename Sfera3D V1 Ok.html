@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="it">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Immersive ASCII Sphere con Three.js</title>
+    <style>
+      body { margin: 0; overflow: hidden; background-color: black; }
+      #control-panel {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        z-index: 10;
+        background: rgba(0,0,0,0.7);
+        padding: 8px;
+        border-radius: 4px;
+        font-family: sans-serif;
+        color: white;
+      }
+      #control-panel input, #control-panel button {
+        font-size: 16px;
+        margin: 4px;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Pannello di controllo: qui puoi in futuro inserire controlli per la parola, ecc. -->
+    <div id="control-panel">
+      <label for="wordInput">Parola:</label>
+      <input type="text" id="wordInput" value="Giorgio Leggio" />
+      <button id="updateWordBtn">Aggiorna Parola</button>
+    </div>
+    <!-- Lo script è un modulo ES -->
+    <script type="module">
+      // Importa Three.js e VRButton
+      import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
+      import { VRButton } from 'https://unpkg.com/three@0.160.0/examples/jsm/webxr/VRButton.js';
+
+      // -------------------- Dichiarazione globale dei flag --------------------
+      let autoRotateX = false;
+      let autoRotateY = true;
+      let pulsationEnabled = false;
+      let finalWordFormationStarted = false;
+
+      // -------------------- Impostazioni base --------------------
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x000000);
+      const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+      camera.position.set(0, 1.6, 3);
+
+      const renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.xr.enabled = true;
+      document.body.appendChild(renderer.domElement);
+      document.body.appendChild(VRButton.createButton(renderer));
+
+  // -------------------- Utility: crea uno sprite testo --------------------
+  function createTextSprite(message, fontSize = 32, color = "red") {
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d");
+
+  // Imposta il font per misurare il testo
+  context.font = `${fontSize}px sans-serif`;
+  const metrics = context.measureText(message);
+  const textWidth = Math.ceil(metrics.width);
+
+  // Imposta le dimensioni del canvas in base al testo
+  canvas.width = textWidth;
+  canvas.height = fontSize;
+
+  // Pulisci il canvas
+  context.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Imposta nuovamente il font
+  context.font = `${fontSize}px sans-serif`;
+  context.textBaseline = "middle";
+  context.fillStyle = color;
+  context.fillText(message, 0, canvas.height / 2);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.needsUpdate = true;
+
+  const material = new THREE.SpriteMaterial({ map: texture, transparent: true });
+  const sprite = new THREE.Sprite(material);
+
+  // Riduci la scala per avere sprite più piccoli (modifica il valore scaleFactor come necessario)
+  const scaleFactor = 0.035;
+  sprite.scale.set(scaleFactor, scaleFactor * (canvas.height / canvas.width), 1);
+
+  return sprite;
+}
+
+
+      // -------------------- Creazione della sfera ASCII --------------------
+      const sphereGroup = new THREE.Group();
+      scene.add(sphereGroup);
+
+      const asciiChars = [];
+      for (let code = 33; code <= 126; code++) {
+        asciiChars.push(String.fromCharCode(code));
+      }
+
+      const sphereRadius = 1;
+      const numStepsPhi = 30;
+      const numStepsTheta = 60;
+
+      for (let i = 0; i <= numStepsPhi; i++) {
+        const phi = Math.PI * i / numStepsPhi;
+        for (let j = 0; j <= numStepsTheta; j++) {
+          const theta = 2 * Math.PI * j / numStepsTheta;
+          const x = sphereRadius * Math.sin(phi) * Math.cos(theta);
+          const y = sphereRadius * Math.cos(phi);
+          const z = sphereRadius * Math.sin(phi) * Math.sin(theta);
+          const char = asciiChars[Math.floor(Math.random() * asciiChars.length)];
+          const sprite = createTextSprite(char, 32, "gray");
+          sprite.position.set(x, y, z);
+          sphereGroup.add(sprite);
+        }
+      }
+
+      // -------------------- Creazione delle lettere target --------------------
+      const letterGroup = new THREE.Group();
+      scene.add(letterGroup);
+
+      let targetWord = document.getElementById('wordInput').value;
+      const letterPoints = [];
+
+      function createTargetLetters(word) {
+        while(letterGroup.children.length) {
+          letterGroup.remove(letterGroup.children[0]);
+        }
+        letterPoints.length = 0;
+        for (let i = 0; i < word.length; i++) {
+          const letter = word[i];
+          const randomSprite = sphereGroup.children[Math.floor(Math.random() * sphereGroup.children.length)];
+          const sprite = createTextSprite(letter, 32, "red");
+          sprite.position.copy(randomSprite.position);
+          letterGroup.add(sprite);
+          letterPoints.push({
+            sprite: sprite,
+            hit: (i === 0),  // la prima lettera è già colpita
+            finalAnimStart: null,
+            finalAnimStartPos: new THREE.Vector3().copy(sprite.position),
+            targetPosition: null
+          });
+        }
+      }
+      createTargetLetters(targetWord);
+
+      document.getElementById('updateWordBtn').addEventListener('click', () => {
+        const inputVal = document.getElementById('wordInput').value;
+        if (inputVal.trim() !== "") {
+          targetWord = inputVal.trim();
+          createTargetLetters(targetWord);
+        }
+      });
+
+      // -------------------- Effetto "pallottola" --------------------
+      let currentSegment = 0;
+      let shotStartTime = null;
+      const bulletDuration = 2000;
+      const hitEffectDuration = 1000;
+      let hitEffects = {};
+      let bulletLine = null;
+
+      // -------------------- Animazione finale: formazione della parola --------------------
+      function computeFinalPositions(word) {
+        const positions = [];
+        const spacing = 2;
+        const startX = -spacing * (word.length - 1) / 2;
+        for (let i = 0; i < word.length; i++) {
+          positions.push(new THREE.Vector3(startX + spacing * i, 1.6, -2));
+        }
+        return positions;
+      }
+      const finalPositions = computeFinalPositions(targetWord);
+
+      // -------------------- Animazione --------------------
+      renderer.setAnimationLoop(animate);
+      function animate(time) {
+        // Rotazione della sfera, se abilitata
+        if (autoRotateX) sphereGroup.rotation.x += 0.01;
+        if (autoRotateY) sphereGroup.rotation.y += 0.008;
+
+        // Effetto "pallottola" tra le lettere target
+        if (currentSegment < letterPoints.length - 1) {
+          if (shotStartTime === null) shotStartTime = time;
+          let progress = (time - shotStartTime) / bulletDuration;
+          if (progress > 1) progress = 1;
+          const start = letterPoints[currentSegment].sprite.position;
+          const end = letterPoints[currentSegment + 1].sprite.position;
+          const currentBulletPos = new THREE.Vector3().lerpVectors(start, end, progress);
+          if (!bulletLine) {
+            const geometry = new THREE.BufferGeometry().setFromPoints([start, currentBulletPos]);
+            const material = new THREE.LineBasicMaterial({ color: 0xffff00 });
+            bulletLine = new THREE.Line(geometry, material);
+            scene.add(bulletLine);
+          } else {
+            bulletLine.geometry.setFromPoints([start, currentBulletPos]);
+          }
+          if (progress >= 1) {
+            letterPoints[currentSegment + 1].hit = true;
+            hitEffects[currentSegment + 1] = time;
+            currentSegment++;
+            shotStartTime = null;
+          }
+        } else {
+          if (bulletLine) {
+            scene.remove(bulletLine);
+            bulletLine = null;
+          }
+        }
+
+        // Animazione finale: spostamento delle lettere colpite verso la posizione finale
+        letterPoints.forEach((lp, i) => {
+          if (lp.hit) {
+            if (!lp.finalAnimStart) {
+              lp.finalAnimStart = time;
+              lp.finalAnimStartPos = lp.sprite.position.clone();
+              lp.targetPosition = finalPositions[i].clone();
+            }
+            let tAnim = (time - lp.finalAnimStart) / 2000;
+            if (tAnim > 1) tAnim = 1;
+            lp.sprite.position.lerpVectors(lp.finalAnimStartPos, lp.targetPosition, tAnim);
+          }
+        });
+
+        renderer.render(scene, camera);
+      }
+
+      window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      });
+    </script>
+  </body>
+</html>
