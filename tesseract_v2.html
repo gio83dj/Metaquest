@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>4D Vision - Tesseract with Solid Shadow</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        canvas { width: 100%; height: 100%; }
+    </style>
+</head>
+<body>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+
+    <script>
+        // Implementazione manuale di ConvexGeometry (semplificata)
+        THREE.ConvexGeometry = function(points) {
+            const geometry = new THREE.BufferGeometry();
+            const vertices = [];
+            const indices = [];
+
+            // Triangolazione semplice: collega tutti i punti al primo per creare una mesh convessa approssimativa
+            for (let i = 1; i < points.length - 1; i++) {
+                indices.push(0, i, i + 1); // Triangoli a ventaglio dal primo vertice
+            }
+
+            points.forEach(p => {
+                vertices.push(p.x, p.y, p.z);
+            });
+
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+            geometry.setIndex(indices);
+            geometry.computeVertexNormals();
+            return geometry;
+        };
+
+        // Scene, camera, renderer
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 2, 5);
+        camera.lookAt(0, 0, 0);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.xr.enabled = true;
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        document.body.appendChild(renderer.domElement);
+
+        // VR Button
+        const vrButton = document.createElement('button');
+        vrButton.textContent = 'ENTER VR';
+        vrButton.style.position = 'absolute';
+        vrButton.style.bottom = '20px';
+        vrButton.style.right = '20px';
+        vrButton.style.padding = '12px 20px';
+        vrButton.style.background = '#000';
+        vrButton.style.color = '#fff';
+        vrButton.style.border = '1px solid #fff';
+        vrButton.style.cursor = 'pointer';
+        vrButton.style.fontFamily = 'sans-serif';
+        vrButton.style.fontSize = '16px';
+        vrButton.onclick = () => {
+            renderer.xr.enabled = true;
+            renderer.xr.getSession()?.then(session => {
+                if (!session) {
+                    navigator.xr.requestSession('immersive-vr').then(session => {
+                        renderer.xr.setSession(session);
+                    });
+                }
+            });
+        };
+        if (navigator.xr) {
+            navigator.xr.isSessionSupported('immersive-vr').then(supported => {
+                document.body.appendChild(vrButton);
+                if (!supported) {
+                    vrButton.textContent = 'VR NOT SUPPORTED';
+                    vrButton.disabled = true;
+                }
+            });
+        } else {
+            vrButton.textContent = 'WEBXR NOT AVAILABLE';
+            vrButton.disabled = true;
+            document.body.appendChild(vrButton);
+        }
+
+        // Griglia di sfondo
+        const gridHelper = new THREE.GridHelper(10, 10, 0x444444, 0x444444);
+        gridHelper.receiveShadow = true;
+        scene.add(gridHelper);
+
+        // Vertici 4D del tesseratto
+        const tesseractVertices4D = [];
+        for (let x = -1; x <= 1; x += 2) {
+            for (let y = -1; y <= 1; y += 2) {
+                for (let z = -1; z <= 1; z += 2) {
+                    for (let w = -1; w <= 1; w += 2) {
+                        tesseractVertices4D.push([x, y, z, w]);
+                    }
+                }
+            }
+        }
+
+        // Bordi con colori per dimensione
+        const edges = [];
+        const edgeColors = [];
+        for (let i = 0; i < 16; i++) {
+            for (let j = i + 1; j < 16; j++) {
+                const diff = tesseractVertices4D[i].map((v, k) => Math.abs(v - tesseractVertices4D[j][k]));
+                if (diff.filter(d => d === 2).length === 1 && diff.filter(d => d !== 0).length === 1) {
+                    edges.push([i, j]);
+                    const dim = diff.indexOf(2);
+                    edgeColors.push(dim === 0 ? 0xff0000 : dim === 1 ? 0x0000ff : dim === 2 ? 0x00ff00 : 0xffffff);
+                }
+            }
+        }
+
+        // Proiezione 4D -> 3D
+        function project4Dto3D(vertex4D) {
+            const [x, y, z, w] = vertex4D;
+            const distance = 4;
+            const factor = distance / (distance - w);
+            return new THREE.Vector3(x * factor, y * factor, z * factor);
+        }
+
+        // Linee del tesseratto
+        const tesseractLines = [];
+        edges.forEach(([start, end], i) => {
+            const lineGeo = new THREE.BufferGeometry();
+            const lineMaterial = new THREE.LineBasicMaterial({ 
+                color: edgeColors[i], 
+                linewidth: 2, 
+                transparent: true, 
+                opacity: 0.8 
+            });
+            const line = new THREE.Line(lineGeo, lineMaterial);
+            tesseractLines.push(line);
+            scene.add(line);
+        });
+
+        // Vertici come sfere
+        const vertexSpheres = [];
+        tesseractVertices4D.forEach(vertex => {
+            const sphereGeo = new THREE.SphereGeometry(0.05, 16, 16);
+            const sphereMat = new THREE.MeshBasicMaterial({ 
+                color: vertex[3] === -1 ? 0x666666 : 0xffffff 
+            });
+            const sphere = new THREE.Mesh(sphereGeo, sphereMat);
+            sphere.castShadow = true;
+            vertexSpheres.push(sphere);
+            scene.add(sphere);
+        });
+
+        // Ombra solida del tesseratto
+        const shadowGeometry = new THREE.ConvexGeometry([]);
+        const shadowMaterial = new THREE.MeshPhongMaterial({ 
+            color: 0x333333, 
+            transparent: true, 
+            opacity: 0.5, 
+            side: THREE.DoubleSide 
+        });
+        const shadowMesh = new THREE.Mesh(shadowGeometry, shadowMaterial);
+        shadowMesh.position.y = -1.5;
+        shadowMesh.castShadow = true;
+        shadowMesh.receiveShadow = true;
+        scene.add(shadowMesh);
+
+        const tesseractGroup = new THREE.Group();
+        tesseractLines.forEach(line => tesseractGroup.add(line));
+        vertexSpheres.forEach(sphere => tesseractGroup.add(sphere));
+        scene.add(tesseractGroup);
+
+        // Luce direzionale con ombre
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+        directionalLight.position.set(5, 5, 5);
+        directionalLight.castShadow = true;
+        directionalLight.shadow.mapSize.width = 1024;
+        directionalLight.shadow.mapSize.height = 1024;
+        directionalLight.shadow.camera.near = 0.5;
+        directionalLight.shadow.camera.far = 50;
+        scene.add(directionalLight);
+
+        // Rotazione 4D
+        let angleXW = 0;
+        let angleYZ = 0;
+        let rotateSpeed = 0.005;
+        function rotate4D() {
+            angleXW += rotateSpeed;
+            angleYZ += rotateSpeed * 1.5;
+            const cosXW = Math.cos(angleXW);
+            const sinXW = Math.sin(angleXW);
+            const cosYZ = Math.cos(angleYZ);
+            const sinYZ = Math.sin(angleYZ);
+
+            const rotatedVertices4D = tesseractVertices4D.map(([x, y, z, w]) => {
+                const newX = x * cosXW - w * sinXW;
+                const newW = x * sinXW + w * cosXW;
+                const newY = y * cosYZ - z * sinYZ;
+                const newZ = y * sinYZ + z * cosYZ;
+                return [newX, newY, newZ, newW];
+            });
+
+            // Aggiorna il tesseratto
+            const projectedVertices = rotatedVertices4D.map(project4Dto3D);
+            tesseractLines.forEach((line, i) => {
+                const [start, end] = edges[i];
+                const startProj = projectedVertices[start];
+                const endProj = projectedVertices[end];
+                line.geometry.setFromPoints([startProj, endProj]);
+                line.material.opacity = 0.5 + 0.5 * (rotatedVertices4D[start][3] + rotatedVertices4D[end][3]) / 4;
+            });
+            vertexSpheres.forEach((sphere, i) => {
+                sphere.position.copy(projectedVertices[i]);
+            });
+
+            // Aggiorna l’ombra solida
+            const shadowVertices = rotatedVertices4D.map(([x, y, z]) => new THREE.Vector3(x, y - 1.5, z));
+            shadowGeometry.dispose();
+            const newShadowGeometry = new THREE.ConvexGeometry(shadowVertices);
+            shadowMesh.geometry = newShadowGeometry;
+        }
+
+        // Animazione
+        function animate() {
+            renderer.setAnimationLoop(() => {
+                rotate4D();
+                tesseractGroup.rotation.y += 0.005;
+                renderer.render(scene, camera);
+            });
+        }
+        animate();
+
+        // Adatta alla finestra
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>

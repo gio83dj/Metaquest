@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tesseract 4D Projection</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+    <script>
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        let tesseractVertices = [
+            [-1, -1, -1, -1], [1, -1, -1, -1], [-1, 1, -1, -1], [1, 1, -1, -1],
+            [-1, -1, 1, -1], [1, -1, 1, -1], [-1, 1, 1, -1], [1, 1, 1, -1],
+            [-1, -1, -1, 1], [1, -1, -1, 1], [-1, 1, -1, 1], [1, 1, -1, 1],
+            [-1, -1, 1, 1], [1, -1, 1, 1], [-1, 1, 1, 1], [1, 1, 1, 1]
+        ];
+
+        function rotate4D(vertices, angle, a, b) {
+            let cos = Math.cos(angle);
+            let sin = Math.sin(angle);
+            return vertices.map(v => {
+                let tempA = cos * v[a] - sin * v[b];
+                let tempB = sin * v[a] + cos * v[b];
+                let newV = [...v];
+                newV[a] = tempA;
+                newV[b] = tempB;
+                return newV;
+            });
+        }
+
+        function project4Dto3D(vertex) {
+            const wFactor = 2 / (2 - vertex[3]);
+            return [vertex[0] * wFactor, vertex[1] * wFactor, vertex[2] * wFactor];
+        }
+
+        function createCubeFromVertices(vertices, material) {
+            const geometry = new THREE.BoxGeometry(1, 1, 1);
+            const cube = new THREE.Mesh(geometry, material);
+            cube.position.set(vertices[0], vertices[1], vertices[2]);
+            return cube;
+        }
+
+        const material = new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true });
+        const cubes = [];
+        tesseractVertices.forEach(v => {
+            const projected = project4Dto3D(v);
+            const cube = createCubeFromVertices(projected, material);
+            cubes.push(cube);
+            scene.add(cube);
+        });
+
+        camera.position.z = 5;
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            tesseractVertices = rotate4D(tesseractVertices, 0.01, 0, 3);
+            tesseractVertices = rotate4D(tesseractVertices, 0.01, 1, 2);
+
+            cubes.forEach((cube, i) => {
+                const projected = project4Dto3D(tesseractVertices[i]);
+                cube.position.set(projected[0], projected[1], projected[2]);
+            });
+
+            renderer.render(scene, camera);
+        }
+
+        animate();
+
+        window.addEventListener("resize", () => {
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+        });
+    </script>
+</body>
+</html>

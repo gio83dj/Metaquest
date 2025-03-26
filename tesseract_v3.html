@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>4D Vision - Tesseract with Correct 3D Shadow</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        canvas { width: 100%; height: 100%; }
+    </style>
+</head>
+<body>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+
+    <script>
+        // Scene, camera, renderer
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x111111);
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 3, 6); // Camera più alta per vedere meglio
+        camera.lookAt(0, 0, 0);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.xr.enabled = true;
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        document.body.appendChild(renderer.domElement);
+
+        // VR Button
+        const vrButton = document.createElement('button');
+        vrButton.textContent = 'ENTER VR';
+        vrButton.style.position = 'absolute';
+        vrButton.style.bottom = '20px';
+        vrButton.style.right = '20px';
+        vrButton.style.padding = '12px 20px';
+        vrButton.style.background = '#000';
+        vrButton.style.color = '#fff';
+        vrButton.style.border = '1px solid #fff';
+        vrButton.style.cursor = 'pointer';
+        vrButton.style.fontFamily = 'sans-serif';
+        vrButton.style.fontSize = '16px';
+        vrButton.onclick = () => {
+            renderer.xr.enabled = true;
+            renderer.xr.getSession()?.then(session => {
+                if (!session) {
+                    navigator.xr.requestSession('immersive-vr').then(session => {
+                        renderer.xr.setSession(session);
+                    });
+                }
+            });
+        };
+        if (navigator.xr) {
+            navigator.xr.isSessionSupported('immersive-vr').then(supported => {
+                document.body.appendChild(vrButton);
+                if (!supported) {
+                    vrButton.textContent = 'VR NOT SUPPORTED';
+                    vrButton.disabled = true;
+                }
+            });
+        } else {
+            vrButton.textContent = 'WEBXR NOT AVAILABLE';
+            vrButton.disabled = true;
+            document.body.appendChild(vrButton);
+        }
+
+        // Piano di fondo
+        const floorGeometry = new THREE.PlaneGeometry(20, 20);
+        const floorMaterial = new THREE.MeshPhongMaterial({ 
+            color: 0x222222, 
+            transparent: true, 
+            opacity: 0.8, 
+            side: THREE.DoubleSide 
+        });
+        const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+        floor.rotation.x = Math.PI / 2;
+        floor.position.y = -2;
+        floor.receiveShadow = true;
+        scene.add(floor);
+
+        // Vertici 4D del tesseratto
+        const tesseractVertices4D = [];
+        for (let x = -1; x <= 1; x += 2) {
+            for (let y = -1; y <= 1; y += 2) {
+                for (let z = -1; z <= 1; z += 2) {
+                    for (let w = -1; w <= 1; w += 2) {
+                        tesseractVertices4D.push([x, y, z, w]);
+                    }
+                }
+            }
+        }
+
+        // Bordi del tesseratto
+        const edges = [];
+        const edgeColors = [];
+        for (let i = 0; i < 16; i++) {
+            for (let j = i + 1; j < 16; j++) {
+                const diff = tesseractVertices4D[i].map((v, k) => Math.abs(v - tesseractVertices4D[j][k]));
+                if (diff.filter(d => d === 2).length === 1 && diff.filter(d => d !== 0).length === 1) {
+                    edges.push([i, j]);
+                    const dim = diff.indexOf(2);
+                    edgeColors.push(dim === 0 ? 0xff0000 : dim === 1 ? 0x0000ff : dim === 2 ? 0x00ff00 : 0xffffff);
+                }
+            }
+        }
+
+        // Facce del tesseratto (per l’ombra)
+        const faces = [
+            [0, 1, 2, 3], [4, 5, 6, 7], [0, 1, 5, 4], [2, 3, 7, 6], [0, 3, 7, 4], [1, 2, 6, 5], // Cubo interno
+            [8, 9, 10, 11], [12, 13, 14, 15], [8, 9, 13, 12], [10, 11, 15, 14], [8, 11, 15, 12], [9, 10, 14, 13], // Cubo esterno
+            [0, 8, 9, 1], [2, 10, 11, 3], [4, 12, 13, 5], [6, 14, 15, 7], // Connessioni (x)
+            [0, 8, 11, 3], [1, 9, 10, 2], [4, 12, 15, 7], [5, 13, 14, 6], // Connessioni (y)
+            [0, 4, 5, 1], [2, 6, 7, 3], [8, 12, 13, 9], [10, 14, 15, 11]  // Connessioni (z)
+        ];
+
+        // Proiezione 4D -> 3D per il tesseratto
+        function project4Dto3D(vertex4D) {
+            const [x, y, z, w] = vertex4D;
+            const distance = 4;
+            const factor = distance / (distance - w);
+            return new THREE.Vector3(x * factor, y * factor, z * factor);
+        }
+
+        // Proiezione 4D -> 3D per l’ombra (proiezione dalla luce)
+        function projectShadow3D(vertex4D, lightPos) {
+            const [x, y, z, w] = vertex4D;
+            const light = new THREE.Vector3(lightPos.x, lightPos.y, lightPos.z);
+            const point = new THREE.Vector3(x, y, z);
+            const shadowPlaneY = -1.9; // Ombra sopra il pavimento
+            const t = (shadowPlaneY - light.y) / (point.y - light.y); // Parametro di intersezione
+            const shadowX = light.x + t * (point.x - light.x);
+            const shadowZ = light.z + t * (point.z - light.z);
+            return new THREE.Vector3(shadowX, shadowPlaneY, shadowZ);
+        }
+
+        // Linee del tesseratto
+        const tesseractLines = [];
+        edges.forEach(([start, end], i) => {
+            const lineGeo = new THREE.BufferGeometry();
+            const lineMaterial = new THREE.LineBasicMaterial({ 
+                color: edgeColors[i], 
+                linewidth: 2, 
+                transparent: true, 
+                opacity: 1.0 
+            });
+            const line = new THREE.Line(lineGeo, lineMaterial);
+            tesseractLines.push(line);
+            scene.add(line);
+        });
+
+        // Facce dell’ombra
+        const shadowFaces = [];
+        faces.forEach((faceIndices) => {
+            const shadowGeo = new THREE.BufferGeometry();
+            const vertices = new Float32Array(12); // 4 vertici x 3 coordinate
+            const indices = [0, 1, 2, 0, 2, 3]; // Due triangoli per quadrato
+            shadowGeo.setIndex(indices);
+            const shadowMat = new THREE.MeshPhongMaterial({ 
+                color: 0xaaaaaa, // Grigio chiaro per visibilità
+                transparent: true, 
+                opacity: 0.7, 
+                side: THREE.DoubleSide 
+            });
+            const shadowFace = new THREE.Mesh(shadowGeo, shadowMat);
+            shadowFace.castShadow = true;
+            shadowFace.receiveShadow = true;
+            shadowFaces.push(shadowFace);
+            scene.add(shadowFace);
+        });
+
+        const tesseractGroup = new THREE.Group();
+        tesseractLines.forEach(line => tesseractGroup.add(line));
+        scene.add(tesseractGroup);
+
+        // Luce direzionale
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 3); // Intensità aumentata
+        directionalLight.position.set(5, 5, 5);
+        directionalLight.castShadow = true;
+        directionalLight.shadow.mapSize.width = 1024;
+        directionalLight.shadow.mapSize.height = 1024;
+        directionalLight.shadow.camera.near = 0.5;
+        directionalLight.shadow.camera.far = 50;
+        scene.add(directionalLight);
+
+        // Luce ambientale
+        const ambientLight = new THREE.AmbientLight(0x606060, 1); // Più intensa per illuminare l’ombra
+        scene.add(ambientLight);
+
+        // Rotazione 4D
+        let angleXW = 0;
+        let angleYZ = 0;
+        let rotateSpeed = 0.005;
+        function rotate4D() {
+            angleXW += rotateSpeed;
+            angleYZ += rotateSpeed * 1.5;
+            const cosXW = Math.cos(angleXW);
+            const sinXW = Math.sin(angleXW);
+            const cosYZ = Math.cos(angleYZ);
+            const sinYZ = Math.sin(angleYZ);
+
+            const rotatedVertices4D = tesseractVertices4D.map(([x, y, z, w]) => {
+                const newX = x * cosXW - w * sinXW;
+                const newW = x * sinXW + w * cosXW;
+                const newY = y * cosYZ - z * sinYZ;
+                const newZ = y * sinYZ + z * cosYZ;
+                return [newX, newY, newZ, newW];
+            });
+
+            // Aggiorna le linee del tesseratto
+            const projectedVertices = rotatedVertices4D.map(project4Dto3D);
+            tesseractLines.forEach((line, i) => {
+                const [start, end] = edges[i];
+                line.geometry.setFromPoints([projectedVertices[start], projectedVertices[end]]);
+                line.material.opacity = 0.7 + 0.3 * (rotatedVertices4D[start][3] + rotatedVertices4D[end][3]) / 4;
+            });
+
+            // Aggiorna le facce dell’ombra
+            const lightPos = directionalLight.position;
+            const shadowVertices = rotatedVertices4D.map(v => projectShadow3D(v, lightPos));
+            shadowFaces.forEach((face, i) => {
+                const [v0, v1, v2, v3] = faces[i];
+                const vertices = new Float32Array([
+                    shadowVertices[v0].x, shadowVertices[v0].y, shadowVertices[v0].z,
+                    shadowVertices[v1].x, shadowVertices[v1].y, shadowVertices[v1].z,
+                    shadowVertices[v2].x, shadowVertices[v2].y, shadowVertices[v2].z,
+                    shadowVertices[v3].x, shadowVertices[v3].y, shadowVertices[v3].z
+                ]);
+                face.geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+                face.geometry.attributes.position.needsUpdate = true;
+                face.geometry.computeVertexNormals(); // Per un’illuminazione corretta
+            });
+        }
+
+        // Animazione
+        function animate() {
+            renderer.setAnimationLoop(() => {
+                rotate4D();
+                tesseractGroup.rotation.y += 0.005;
+                renderer.render(scene, camera);
+            });
+        }
+        animate();
+
+        // Adatta alla finestra
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
