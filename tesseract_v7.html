@@ -122,16 +122,9 @@
 
         // Stato della navigazione
         const navigation = {
-			rotationSpeed: 0.005,
-			keyState: {
-				ArrowLeft: false,
-				ArrowRight: false,
-				ArrowUp: false,
-				ArrowDown: false,
-				KeyW: false, // Aggiunto W
-				KeyS: false  // Aggiunto S
-			}
-		};
+            rotationSpeed: 0.005, // Velocità di rotazione
+            keyState: { ArrowLeft: false, ArrowRight: false, ArrowUp: false, ArrowDown: false } // Stato delle frecce
+        };
 
         // Gestione input da tastiera
         window.addEventListener('keydown', (e) => {
@@ -259,7 +252,6 @@
         // Variabili per la rotazione 4D
         let angleXW = 0; // Angolo di rotazione nel piano XW
         let angleYZ = 0; // Angolo di rotazione nel piano YZ
-		let angleZW = 0; // Nuova variabile per rotazione ZW
 
         // Gestione degli input per la rotazione
         function handleRotationInput() {
@@ -267,8 +259,6 @@
             if (navigation.keyState.ArrowRight) angleXW += navigation.rotationSpeed;
             if (navigation.keyState.ArrowUp) angleYZ -= navigation.rotationSpeed;
             if (navigation.keyState.ArrowDown) angleYZ += navigation.rotationSpeed;
-			if (navigation.keyState.KeyW) angleZW -= navigation.rotationSpeed; // W per rotazione antioraria ZW
-			if (navigation.keyState.KeyS) angleZW += navigation.rotationSpeed; // S per rotazione oraria ZW
 
             if (gamepad && !renderer.xr.isPresenting) { // Gamepad non-VR
                 angleXW += gamepad.axes[0] * navigation.rotationSpeed * 2;
@@ -309,27 +299,21 @@
 
         // Rotazione 4D del tesseratto
         function rotate4D() {
-			handleRotationInput();
+            handleRotationInput(); // Gestisce gli input
 
-			const cosXW = Math.cos(angleXW);
-			const sinXW = Math.sin(angleXW);
-			const cosYZ = Math.cos(angleYZ);
-			const sinYZ = Math.sin(angleYZ);
-			const cosZW = Math.cos(angleZW); // Coseno per ZW
-			const sinZW = Math.sin(angleZW); // Seno per ZW
+            const cosXW = Math.cos(angleXW);
+            const sinXW = Math.sin(angleXW);
+            const cosYZ = Math.cos(angleYZ);
+            const sinYZ = Math.sin(angleYZ);
 
-			const rotatedVertices4D = tesseractVertices4D.map(([x, y, z, w]) => {
-				// Rotazione XW
-				const newX = x * cosXW - w * sinXW;
-				let newW = x * sinXW + w * cosXW;
-				// Rotazione YZ
-				const newY = y * cosYZ - z * sinYZ;
-				let newZ = y * sinYZ + z * cosYZ;
-				// Rotazione ZW (applicata dopo XW e YZ)
-				const finalZ = newZ * cosZW - newW * sinZW;
-				const finalW = newZ * sinZW + newW * cosZW;
-				return [newX, newY, finalZ, finalW];
-			});
+            // Ruota i vertici in 4D
+            const rotatedVertices4D = tesseractVertices4D.map(([x, y, z, w]) => {
+                const newX = x * cosXW - w * sinXW;
+                const newW = x * sinXW + w * cosXW;
+                const newY = y * cosYZ - z * sinYZ;
+                const newZ = y * sinYZ + z * cosYZ;
+                return [newX, newY, newZ, newW];
+            });
 
             // Proietta i vertici in 3D per le linee
             const projectedVertices = rotatedVertices4D.map(v => project4Dto3D(v));
