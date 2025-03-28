@@ -5,14 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ombra 3D Volumetrica del Tesseratto</title>
     <style>
-        body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; }
-        canvas { width: 100%; height: 100%; }
+        body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; } /* Rimuove margini, nasconde overflow e imposta il font */
+        canvas { width: 100%; height: 100%; } /* Fa sì che il canvas occupi tutto lo spazio disponibile */
         #navigationInfo {
             position: absolute;
             top: 10px;
             left: 10px;
             color: white;
-            background-color: rgba(0,0,0,0.5);
+            background-color: rgba(0,0,0,0.5); /* Sfondo semitrasparente per leggibilità */
             padding: 10px;
             border-radius: 5px;
             font-size: 12px;
@@ -20,51 +20,49 @@
     </style>
 </head>
 <body>
+    <!-- Pannello informativo per i controlli di navigazione -->
     <div id="navigationInfo">
         Navigazione: 
-        <br>🎮 Joypad/Frecce: Ruota Tesseratto (4D)
-        <br>🎮 Joystick Dx (VR): Orienta Camera
-        <br>🎮 X/Y (Sinistro, VR): Zoom In/Out
-        <br>🖱️ Trascina: Orienta Camera
-        <br>🖱️ Rotella: Zoom In/Out
+        <br>🎮 Joypad/Frecce: Ruota Tesseratto (4D) <!-- Rotazione 4D con joystick sinistro o frecce -->
+        <br>🎮 Joystick Dx (VR): Orienta Camera <!-- Orientamento camera con joystick destro in VR -->
+        <br>🎮 X/Y (Sinistro, VR): Zoom In/Out <!-- Zoom con tasti X/Y del controller sinistro in VR -->
+        <br>🖱️ Trascina: Orienta Camera <!-- Rotazione con trascinamento del mouse -->
+        <br>🖱️ Rotella: Zoom In/Out <!-- Zoom con rotella del mouse -->
     </div>
 
+    <!-- Script come modulo ES per utilizzare Three.js e WebXR -->
     <script type="module">
-        // Importa Three.js e VRButton come moduli ES
+        // Importazione di Three.js e VRButton come moduli ES
         import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
         import { VRButton } from 'https://unpkg.com/three@0.160.0/examples/jsm/webxr/VRButton.js';
 
-        // Configurazione della scena
-        const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x111111);
-        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        camera.position.set(0, 3, 6);
-        camera.lookAt(0, 0, 0);
+        // Configurazione della scena di base
+        const scene = new THREE.Scene(); // Crea una nuova scena 3D
+        scene.background = new THREE.Color(0x111111); // Imposta uno sfondo grigio scuro
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000); // Camera prospettica
+        camera.position.set(0, 3, 6); // Posiziona la camera sopra e davanti al centro
+        camera.lookAt(0, 0, 0); // Fa guardare la camera verso l'origine
 
-        const renderer = new THREE.WebGLRenderer({ antialias: true });
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.shadowMap.enabled = true;
-        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-        renderer.xr.enabled = true;
-        document.body.appendChild(renderer.domElement);
-        document.body.appendChild(VRButton.createButton(renderer));
+        const renderer = new THREE.WebGLRenderer({ antialias: true }); // Renderer WebGL con antialiasing
+        renderer.setSize(window.innerWidth, window.innerHeight); // Imposta le dimensioni del renderer
+        renderer.shadowMap.enabled = true; // Abilita le ombre
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Tipo di ombre morbide
+        renderer.xr.enabled = true; // Abilita il supporto per WebXR (VR)
+        document.body.appendChild(renderer.domElement); // Aggiunge il canvas alla pagina
+        document.body.appendChild(VRButton.createButton(renderer)); // Aggiunge il pulsante VR standard
 
-        // Classe OrbitControls (rimane invariata, ma inclusa per completezza)
+        // Classe per i controlli di orbiting con il mouse
         class OrbitControls {
             constructor(camera, domElement) {
                 this.camera = camera;
                 this.domElement = domElement;
-                this.enableDamping = true;
+                this.enableDamping = true; // Ammortamento per movimenti fluidi
                 this.dampingFactor = 0.25;
                 this.screenSpacePanning = false;
-                this.maxPolarAngle = Math.PI / 2;
-                this.mouseButtons = {
-                    LEFT: THREE.MOUSE.ROTATE,
-                    MIDDLE: THREE.MOUSE.DOLLY,
-                    RIGHT: THREE.MOUSE.PAN
-                };
-                this.target = new THREE.Vector3(0, 0, 0);
-                this._initializeControls();
+                this.maxPolarAngle = Math.PI / 2; // Limite di rotazione verticale
+                this.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
+                this.target = new THREE.Vector3(0, 0, 0); // Punto centrale di rotazione (origine)
+                this._initializeControls(); // Inizializza gli eventi del mouse
             }
 
             _initializeControls() {
@@ -75,93 +73,83 @@
             }
 
             _onMouseDown(event) {
-                this._isMouseDown = true;
-                this._previousMousePosition = { x: event.clientX, y: event.clientY };
+                this._isMouseDown = true; // Segnala che il mouse è premuto
+                this._previousMousePosition = { x: event.clientX, y: event.clientY }; // Salva la posizione iniziale
             }
 
             _onMouseMove(event) {
-                if (!this._isMouseDown) return;
+                if (!this._isMouseDown) return; // Ignora se il mouse non è premuto
                 const deltaMove = {
                     x: event.clientX - this._previousMousePosition.x,
                     y: event.clientY - this._previousMousePosition.y
                 };
-                const theta = this._toRadians(deltaMove.x * 0.5);
-                const phi = this._toRadians(deltaMove.y * 0.5);
-                const offset = this.camera.position.clone().sub(this.target);
+                const theta = this._toRadians(deltaMove.x * 0.5); // Angolo orizzontale
+                const phi = this._toRadians(deltaMove.y * 0.5); // Angolo verticale
+                const offset = this.camera.position.clone().sub(this.target); // Distanza dalla camera al target
                 const quaternionY = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -theta);
-                offset.applyQuaternion(quaternionY);
+                offset.applyQuaternion(quaternionY); // Ruota orizzontalmente
                 const right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion);
                 const quaternionX = new THREE.Quaternion().setFromAxisAngle(right, -phi);
-                offset.applyQuaternion(quaternionX);
-                this.camera.position.copy(this.target).add(offset);
-                this.camera.lookAt(this.target);
-                this._previousMousePosition = { x: event.clientX, y: event.clientY };
+                offset.applyQuaternion(quaternionX); // Ruota verticalmente
+                this.camera.position.copy(this.target).add(offset); // Aggiorna posizione camera
+                this.camera.lookAt(this.target); // Mantieni il focus sul target
+                this._previousMousePosition = { x: event.clientX, y: event.clientY }; // Aggiorna posizione precedente
             }
 
             _onMouseUp() {
-                this._isMouseDown = false;
+                this._isMouseDown = false; // Segnala che il mouse è rilasciato
             }
 
             _onMouseWheel(event) {
-                const delta = event.deltaY * 0.01;
+                const delta = event.deltaY * 0.01; // Movimento della rotella
                 const offset = this.camera.position.clone().sub(this.target);
                 const distance = offset.length();
-                const newDistance = Math.max(2, Math.min(10, distance + delta));
+                const newDistance = Math.max(2, Math.min(10, distance + delta)); // Limita lo zoom tra 2 e 10
                 offset.setLength(newDistance);
-                this.camera.position.copy(this.target).add(offset);
-                this.camera.lookAt(this.target);
+                this.camera.position.copy(this.target).add(offset); // Aggiorna posizione
+                this.camera.lookAt(this.target); // Mantieni il focus
             }
 
             _toRadians(angle) {
-                return angle * (Math.PI / 180);
+                return angle * (Math.PI / 180); // Converte gradi in radianti
             }
 
-            update() {}
-            handleResize() {}
+            update() {} // Metodo vuoto per compatibilità
+            handleResize() {} // Metodo vuoto per compatibilità
         }
 
-        const controls = new OrbitControls(camera, renderer.domElement);
+        const controls = new OrbitControls(camera, renderer.domElement); // Inizializza i controlli
 
         // Stato della navigazione
         const navigation = {
-            rotationSpeed: 0.005,
-            keyState: {
-                ArrowLeft: false,
-                ArrowRight: false,
-                ArrowUp: false,
-                ArrowDown: false
-            }
+            rotationSpeed: 0.005, // Velocità di rotazione
+            keyState: { ArrowLeft: false, ArrowRight: false, ArrowUp: false, ArrowDown: false } // Stato delle frecce
         };
 
+        // Gestione input da tastiera
         window.addEventListener('keydown', (e) => {
-            if (navigation.keyState.hasOwnProperty(e.code)) {
-                navigation.keyState[e.code] = true;
-            }
+            if (navigation.keyState.hasOwnProperty(e.code)) navigation.keyState[e.code] = true;
         });
-
         window.addEventListener('keyup', (e) => {
-            if (navigation.keyState.hasOwnProperty(e.code)) {
-                navigation.keyState[e.code] = false;
-            }
+            if (navigation.keyState.hasOwnProperty(e.code)) navigation.keyState[e.code] = false;
         });
 
-        let gamepad = null;
-        let leftController = null;
-        let rightController = null;
+        // Variabili per i controller
+        let gamepad = null; // Gamepad non-VR
+        let leftController = null; // Controller sinistro VR
+        let rightController = null; // Controller destro VR
 
+        // Aggiorna lo stato dei controller
         function updateGamepadState() {
-            if (renderer.xr.isPresenting) {
+            if (renderer.xr.isPresenting) { // Modalità VR attiva
                 const inputSources = renderer.xr.getSession().inputSources;
                 leftController = null;
                 rightController = null;
                 for (const inputSource of inputSources) {
-                    if (inputSource.handedness === 'left') {
-                        leftController = inputSource.gamepad;
-                    } else if (inputSource.handedness === 'right') {
-                        rightController = inputSource.gamepad;
-                    }
+                    if (inputSource.handedness === 'left') leftController = inputSource.gamepad;
+                    else if (inputSource.handedness === 'right') rightController = inputSource.gamepad;
                 }
-            } else {
+            } else { // Modalità non-VR
                 const gamepads = navigator.getGamepads();
                 for (let i = 0; i < gamepads.length; i++) {
                     if (gamepads[i]) {
@@ -172,115 +160,121 @@
             }
         }
 
-        window.addEventListener('gamepadconnected', (e) => {
-            gamepad = e.gamepad;
-        });
+        window.addEventListener('gamepadconnected', (e) => { gamepad = e.gamepad; });
+        window.addEventListener('gamepaddisconnected', () => { gamepad = null; });
 
-        window.addEventListener('gamepaddisconnected', () => {
-            gamepad = null;
-        });
-
-        // Vertici 4D del tesseratto
+        // Definizione dei vertici 4D del tesseratto
         const tesseractVertices4D = [];
         for (let x = -1; x <= 1; x += 2) {
             for (let y = -1; y <= 1; y += 2) {
                 for (let z = -1; z <= 1; z += 2) {
                     for (let w = -1; w <= 1; w += 2) {
-                        tesseractVertices4D.push([x, y, z, w]);
+                        tesseractVertices4D.push([x, y, z, w]); // 16 vertici in 4D
                     }
                 }
             }
         }
 
+        // Celle cubiche del tesseratto (8 cubi)
         const cubeCells = [
-            [0, 1, 2, 3, 4, 5, 6, 7],
-            [8, 9, 10, 11, 12, 13, 14, 15],
-            [0, 8, 2, 10, 4, 12, 6, 14],
+            [0, 1, 2, 3, 4, 5, 6, 7], // w = -1
+            [8, 9, 10, 11, 12, 13, 14, 15], // w = +1
+            [0, 8, 2, 10, 4, 12, 6, 14], // Connessioni lungo x
             [1, 9, 3, 11, 5, 13, 7, 15],
-            [0, 1, 8, 9, 4, 5, 12, 13],
+            [0, 1, 8, 9, 4, 5, 12, 13], // Connessioni lungo y
             [2, 3, 10, 11, 6, 7, 14, 15],
-            [0, 2, 8, 10, 1, 3, 9, 11],
+            [0, 2, 8, 10, 1, 3, 9, 11], // Connessioni lungo z
             [4, 6, 12, 14, 5, 7, 13, 15]
         ];
 
+        // Funzioni di proiezione 4D -> 3D
         function project4Dto3D(vertex4D, distance = 4) {
             const [x, y, z, w] = vertex4D;
-            const factor = distance / (distance - w);
+            const factor = distance / (distance - w); // Prospettiva basata su w
             return new THREE.Vector3(x * factor, y * factor, z * factor);
         }
 
         function projectShadow3D(vertex4D, distance = 4) {
             const [x, y, z, w] = vertex4D;
             const factor = distance / (distance - w);
-            return new THREE.Vector3(x * factor, y * factor - 4, z * factor);
+            return new THREE.Vector3(x * factor, y * factor - 4, z * factor); // Ombra spostata in basso
         }
 
-        function createCubeMesh() {
-            const geometry = new THREE.BoxGeometry(2, 2, 2);
-            const material = new THREE.MeshPhongMaterial({ 
-                color: 0x666666, 
-                side: THREE.DoubleSide,
-                transparent: true,
-                opacity: 0.7
-            });
-            const cube = new THREE.Mesh(geometry, material);
-            cube.castShadow = true;
-            cube.receiveShadow = true;
-            return cube;
-        }
+        // Crea una mesh cubica per l'ombra
+        // Crea una mesh cubica per l'ombra con sovrapposizioni più evidenti
+		function createCubeMesh() {
+			const geometry = new THREE.BoxGeometry(2, 2, 2); // Cubo di dimensioni 2x2x2
+			const material = new THREE.MeshPhongMaterial({ 
+    color: 0x444444,
+    side: THREE.DoubleSide,
+    transparent: true,
+    opacity: 0.5,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    emissive: 0x222222 // Leggera emissività grigia
+});
+			const cube = new THREE.Mesh(geometry, material);
+			cube.castShadow = true; // Proietta ombre
+			cube.receiveShadow = true; // Riceve ombre
+			return cube;
+		}
 
-        const shadowCubes = cubeCells.map(() => createCubeMesh());
-        shadowCubes.forEach(cube => scene.add(cube));
+        const shadowCubes = cubeCells.map(() => createCubeMesh()); // Crea 8 cubi per le ombre
+        shadowCubes.forEach(cube => scene.add(cube)); // Aggiunge i cubi alla scena
 
+        // Definizione degli spigoli del tesseratto
         const edges = [];
         for (let i = 0; i < 16; i++) {
             for (let j = i + 1; j < 16; j++) {
                 const diff = tesseractVertices4D[i].map((v, k) => Math.abs(v - tesseractVertices4D[j][k]));
                 if (diff.filter(d => d === 2).length === 1 && diff.filter(d => d !== 0).length === 1) {
-                    edges.push([i, j]);
+                    edges.push([i, j]); // Collega vertici adiacenti
                 }
             }
         }
         const tesseractLines = edges.map(([start, end]) => {
             const lineGeo = new THREE.BufferGeometry();
-            const lineMaterial = new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 2 });
+            const lineMaterial = new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 2 }); // Linee bianche
             const line = new THREE.Line(lineGeo, lineMaterial);
             scene.add(line);
             return line;
         });
 
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 3);
-        directionalLight.position.set(5, 5, 5);
-        directionalLight.castShadow = true;
+        // Illuminazione
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 5); // Luce direzionale intensa
+        directionalLight.position.set(5, 5, 5); // Posizione della luce
+        directionalLight.castShadow = true; // Proietta ombre
         scene.add(directionalLight);
 
-        const ambientLight = new THREE.AmbientLight(0x606060, 1);
+        const ambientLight = new THREE.AmbientLight(0x606060, 1); // Luce ambientale tenue
         scene.add(ambientLight);
 
-        let angleXW = 0;
-        let angleYZ = 0;
+        // Variabili per la rotazione 4D
+        let angleXW = 0; // Angolo di rotazione nel piano XW
+        let angleYZ = 0; // Angolo di rotazione nel piano YZ
 
+        // Gestione degli input per la rotazione
         function handleRotationInput() {
             if (navigation.keyState.ArrowLeft) angleXW -= navigation.rotationSpeed;
             if (navigation.keyState.ArrowRight) angleXW += navigation.rotationSpeed;
             if (navigation.keyState.ArrowUp) angleYZ -= navigation.rotationSpeed;
             if (navigation.keyState.ArrowDown) angleYZ += navigation.rotationSpeed;
 
-            if (gamepad && !renderer.xr.isPresenting) {
+            if (gamepad && !renderer.xr.isPresenting) { // Gamepad non-VR
                 angleXW += gamepad.axes[0] * navigation.rotationSpeed * 2;
                 angleYZ += gamepad.axes[1] * navigation.rotationSpeed * 2;
             }
 
-            if (renderer.xr.isPresenting) {
-                if (leftController) {
-                    angleXW += leftController.axes[0] * navigation.rotationSpeed * 2;
+            if (renderer.xr.isPresenting) { // Modalità VR
+                if (leftController) { // Controller sinistro
+                    angleXW += leftController.axes[0] * navigation.rotationSpeed * 2; // Rotazione 4D
                     angleYZ += leftController.axes[1] * navigation.rotationSpeed * 2;
-                    if (leftController.buttons[2].pressed) zoomCamera(-0.1); // Tasto X
-                    if (leftController.buttons[3].pressed) zoomCamera(0.1);  // Tasto Y
+                    if (leftController.buttons[2].pressed) zoomCamera(-0.1); // Tasto X: avvicina
+                    if (leftController.buttons[3].pressed) zoomCamera(0.1);  // Tasto Y: allontana
                 }
-                if (rightController) {
-                    const theta = rightController.axes[0] * navigation.rotationSpeed * 10;
-                    const phi = rightController.axes[1] * navigation.rotationSpeed * 10;
+                if (rightController) { // Controller destro
+                    const theta = rightController.axes[0] * navigation.rotationSpeed * 10; // Rotazione orizzontale
+                    const phi = rightController.axes[1] * navigation.rotationSpeed * 10; // Rotazione verticale
                     const offset = camera.position.clone().sub(controls.target);
                     const quaternionY = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -theta);
                     offset.applyQuaternion(quaternionY);
@@ -293,23 +287,26 @@
             }
         }
 
+        // Funzione per lo zoom della camera
         function zoomCamera(delta) {
             const offset = camera.position.clone().sub(controls.target);
             const distance = offset.length();
-            const newDistance = Math.max(2, Math.min(10, distance + delta));
+            const newDistance = Math.max(2, Math.min(10, distance + delta)); // Limita la distanza
             offset.setLength(newDistance);
             camera.position.copy(controls.target).add(offset);
             camera.lookAt(controls.target);
         }
 
+        // Rotazione 4D del tesseratto
         function rotate4D() {
-            handleRotationInput();
+            handleRotationInput(); // Gestisce gli input
 
             const cosXW = Math.cos(angleXW);
             const sinXW = Math.sin(angleXW);
             const cosYZ = Math.cos(angleYZ);
             const sinYZ = Math.sin(angleYZ);
 
+            // Ruota i vertici in 4D
             const rotatedVertices4D = tesseractVertices4D.map(([x, y, z, w]) => {
                 const newX = x * cosXW - w * sinXW;
                 const newW = x * sinXW + w * cosXW;
@@ -318,28 +315,31 @@
                 return [newX, newY, newZ, newW];
             });
 
+            // Proietta i vertici in 3D per le linee
             const projectedVertices = rotatedVertices4D.map(v => project4Dto3D(v));
             tesseractLines.forEach((line, i) => {
                 const [start, end] = edges[i];
                 line.geometry.setFromPoints([projectedVertices[start], projectedVertices[end]]);
             });
 
+            // Proietta i vertici per le ombre
             const shadowVertices = rotatedVertices4D.map(v => projectShadow3D(v));
             shadowCubes.forEach((cube, i) => {
                 const cell = cubeCells[i];
                 const positions = cell.map(index => shadowVertices[index]);
                 const center = positions.reduce((acc, p) => acc.add(p), new THREE.Vector3()).divideScalar(8);
-                cube.position.copy(center);
+                cube.position.copy(center); // Posiziona il cubo al centro della cella
             });
         }
 
-        // Animazione
+        // Loop di animazione per desktop e VR
         renderer.setAnimationLoop(() => {
-            updateGamepadState();
-            rotate4D();
-            renderer.render(scene, camera);
+            updateGamepadState(); // Aggiorna lo stato dei controller
+            rotate4D(); // Ruota il tesseratto
+            renderer.render(scene, camera); // Renderizza la scena
         });
 
+        // Adatta la camera e il renderer al ridimensionamento della finestra
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
